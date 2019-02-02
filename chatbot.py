@@ -1,18 +1,24 @@
 from __future__ import print_function
-
+import speech_recognition as sr
 import numpy as np
 import tensorflow as tf
-
 import argparse
 import os
 import pickle
 import copy
 import sys
 import html
-
+from gtts import gTTS
 from utils import TextLoader
 from model import Model
+total = ""
 
+def speak(audioString):
+	print(audioString)
+	tts = gTTS(text=audioString, lang='en')
+	tts.save("audio.mp3")
+	os.system("mpg321 -q audio.mp3")
+	
 def main():
     assert sys.version_info >= (3, 3), \
     "Must be run in Python 3.3 or later. You are running {}".format(sys.version)
@@ -124,8 +130,26 @@ def possibly_escaped_char(raw_chars):
 
 def chatbot(net, sess, chars, vocab, max_length, beam_width, relevance, temperature, topn):
     states = initial_state_with_relevance_masking(net, sess, relevance)
+    x = 0
     while True:
-        user_input = input('\n> ')
+        x= x + 1
+        conf = input("\nPress enter to talk...")
+        r = sr.Recognizer()
+        with sr.Microphone() as source:
+            if x ==1:
+                os.system('clear')
+                conf = input("\nPress enter to talk...")
+            audio = r.listen(source)
+        try:
+            a = r.recognize_google(audio)
+            print("> ", a)
+            user_input = a
+        except sr.UnknownValueError:
+            print("Google Speech Recognition could not understand audio")
+        except sr.RequestError as e:
+            print("Could not request results from Google Speech Recognition service; {0}".format(e))
+            
+        
         user_command_entered, reset, states, relevance, temperature, topn, beam_width = process_user_command(
             user_input, states, relevance, temperature, topn, beam_width)
         if reset: states = initial_state_with_relevance_masking(net, sess, relevance)
@@ -137,12 +161,15 @@ def chatbot(net, sess, chars, vocab, max_length, beam_width, relevance, temperat
                 forward_args={'relevance':relevance, 'mask_reset_token':vocab['\n'], 'forbidden_token':vocab['>'],
                                 'temperature':temperature, 'topn':topn})
             out_chars = []
+            total = ''
             for i, char_token in enumerate(computer_response_generator):
                 out_chars.append(chars[char_token])
-                print(possibly_escaped_char(out_chars), end='', flush=True)
+                total = total + str(possibly_escaped_char(out_chars))
                 states = forward_text(net, sess, states, relevance, vocab, chars[char_token])
                 if i >= max_length: break
             states = forward_text(net, sess, states, relevance, vocab, sanitize_text(vocab, "\n> "))
+            print(total)
+            speak(total)
 
 def process_user_command(user_input, states, relevance, temperature, topn, beam_width):
     user_command_entered = False
@@ -323,3 +350,4 @@ def beam_search_generator(sess, net, initial_state, initial_sample,
 
 if __name__ == '__main__':
     main()
+
